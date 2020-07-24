@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.TypedArray;
+import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -34,6 +35,10 @@ import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
+import androidx.annotation.ColorInt;
+import androidx.annotation.RequiresApi;
+import androidx.core.content.ContextCompat;
+
 import com.miguelcatalan.materialsearchview.utils.AnimationUtil;
 
 import java.lang.reflect.Field;
@@ -45,7 +50,7 @@ import java.util.List;
 public class MaterialSearchView extends FrameLayout implements Filter.FilterListener {
     public static final int REQUEST_VOICE = 9999;
 
-    private MenuItem mMenuItem;
+    //private MenuItem mMenuItem;
     private boolean mIsSearchOpen = false;
     private int mAnimationDuration;
     private boolean mClearingFocus;
@@ -169,6 +174,7 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
         initSearchView();
 
         mSuggestionsListView.setVisibility(GONE);
+        mTintView.setVisibility(VISIBLE);
         setAnimationDuration(AnimationUtil.ANIMATION_DURATION_MEDIUM);
     }
 
@@ -279,7 +285,7 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
         PackageManager pm = getContext().getPackageManager();
         List<ResolveInfo> activities = pm.queryIntentActivities(
                 new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0);
-        return activities.size() == 0;
+        return activities.size() != 0;
     }
 
     public void hideKeyboard(View view) {
@@ -363,6 +369,31 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
         }
     }
 
+    public void setCursorColor(@ColorInt int color) {
+        try {
+            // Get the cursor resource id
+            Field field = TextView.class.getDeclaredField("mCursorDrawableRes");
+            field.setAccessible(true);
+            int drawableResId = field.getInt(mSearchSrcTextView);
+
+            // Get the editor
+            field = TextView.class.getDeclaredField("mEditor");
+            field.setAccessible(true);
+            Object editor = field.get(mSearchSrcTextView);
+
+            // Get the drawable and set a color filter
+            Drawable drawable = ContextCompat.getDrawable(mSearchSrcTextView.getContext(), drawableResId);
+            drawable.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+            Drawable[] drawables = {drawable, drawable};
+
+            // Set the drawables
+            field = editor.getClass().getDeclaredField("mCursorDrawable");
+            field.setAccessible(true);
+            field.set(editor, drawables);
+        } catch (Exception ignored) {
+        }
+    }
+
     public void setVoiceSearch(boolean voiceSearch) {
         allowVoiceSearch = voiceSearch;
     }
@@ -415,15 +446,22 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
     public void setSuggestions(String[] suggestions) {
         if (suggestions != null && suggestions.length > 0) {
             mTintView.setVisibility(VISIBLE);
-            final SearchAdapter adapter = new SearchAdapter(mContext, suggestions, suggestionIcon, ellipsize);
+            final SearchAdapter adapter = new SearchAdapter(mContext, suggestions, suggestionIcon, ellipsize, false);
             setAdapter(adapter);
 
-            setOnItemClickListener(new AdapterView.OnItemClickListener() {
-                @Override
-                public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                    setQuery((String) adapter.getItem(position), submit);
-                }
-            });
+            setOnItemClickListener((parent, view, position, id) -> setQuery((String) adapter.getItem(position), submit));
+        } else {
+            mTintView.setVisibility(GONE);
+        }
+    }
+
+    public void setSuggestions(String[] suggestions, boolean checkSuggestion) {
+        if (suggestions != null && suggestions.length > 0) {
+            mTintView.setVisibility(VISIBLE);
+            final SearchAdapter adapter = new SearchAdapter(mContext, suggestions, suggestionIcon, ellipsize, checkSuggestion);
+            setAdapter(adapter);
+
+            setOnItemClickListener((parent, view, position, id) -> setQuery((String) adapter.getItem(position), submit));
         } else {
             mTintView.setVisibility(GONE);
         }
@@ -437,7 +475,6 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
             mSuggestionsListView.setVisibility(GONE);
         }
     }
-
 
     /**
      * Calling this will set the query to search text box. if submit is true, it'll submit the query.
@@ -475,8 +512,7 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
      * @param menuItem
      */
     public void setMenuItem(MenuItem menuItem) {
-        this.mMenuItem = menuItem;
-        mMenuItem.setOnMenuItemClickListener(new MenuItem.OnMenuItemClickListener() {
+        menuItem.setOnMenuItemClickListener(new MenuItem.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(MenuItem item) {
                 showSearch();
@@ -515,6 +551,7 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
      *
      * @param animate true for animate
      */
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     public void showSearch(boolean animate) {
         if (isSearchOpen()) {
             return;
@@ -536,6 +573,7 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
         mIsSearchOpen = true;
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     private void setVisibleWithAnimation() {
         AnimationUtil.AnimationListener animationListener = new AnimationUtil.AnimationListener() {
             @Override
@@ -557,13 +595,8 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
             }
         };
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            mSearchLayout.setVisibility(View.VISIBLE);
-            AnimationUtil.reveal(mSearchTopBar, animationListener);
-
-        } else {
-            AnimationUtil.fadeInView(mSearchLayout, mAnimationDuration, animationListener);
-        }
+        mSearchLayout.setVisibility(View.VISIBLE);
+        AnimationUtil.reveal(mSearchTopBar, animationListener, mAnimationDuration);
     }
 
     /**
@@ -574,15 +607,45 @@ public class MaterialSearchView extends FrameLayout implements Filter.FilterList
             return;
         }
 
-        mSearchSrcTextView.setText(null);
-        dismissSuggestions();
-        clearFocus();
+        AnimationUtil.AnimationListener animationListener = new AnimationUtil.AnimationListener(){
 
-        mSearchLayout.setVisibility(GONE);
-        if (mSearchViewListener != null) {
-            mSearchViewListener.onSearchViewClosed();
+            @Override
+            public boolean onAnimationStart(View view) {
+                return false;
+            }
+
+            @Override
+            public boolean onAnimationEnd(View view) {
+                mSearchSrcTextView.setText(null);
+                dismissSuggestions();
+                clearFocus();
+
+                mSearchLayout.setVisibility(GONE);
+                if (mSearchViewListener != null) {
+                    mSearchViewListener.onSearchViewClosed();
+                }
+                mIsSearchOpen = false;
+
+                return false;
+            }
+
+            @Override
+            public boolean onAnimationCancel(View view) {
+                return false;
+            }
+        };
+
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            mSearchLayout.setVisibility(View.VISIBLE);
+            AnimationUtil.hide(mSearchTopBar, animationListener);
+
+        } else {
+            mSearchLayout.setVisibility(VISIBLE);
+            AnimationUtil.fadeOutView(mSearchLayout, AnimationUtil.ANIMATION_DURATION_MEDIUM, animationListener);
         }
-        mIsSearchOpen = false;
+
+
 
     }
 

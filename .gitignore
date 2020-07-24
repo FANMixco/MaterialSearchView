@@ -51,3 +51,4 @@ tmp
 *.tgz
 *.lock
 *.lck
+*.zip
