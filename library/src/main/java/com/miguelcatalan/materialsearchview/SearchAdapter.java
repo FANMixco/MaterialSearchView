@@ -27,6 +27,7 @@ public class SearchAdapter extends BaseAdapter implements Filterable {
     private Drawable suggestionIcon;
     private LayoutInflater inflater;
     private boolean ellipsize;
+    private boolean checkWholeString;
 
     public SearchAdapter(Context context, String[] suggestions) {
         inflater = LayoutInflater.from(context);
@@ -34,12 +35,13 @@ public class SearchAdapter extends BaseAdapter implements Filterable {
         this.suggestions = suggestions;
     }
 
-    public SearchAdapter(Context context, String[] suggestions, Drawable suggestionIcon, boolean ellipsize) {
+    public SearchAdapter(Context context, String[] suggestions, Drawable suggestionIcon, boolean ellipsize, boolean checkWholeString) {
         inflater = LayoutInflater.from(context);
         data = new ArrayList<>();
         this.suggestions = suggestions;
         this.suggestionIcon = suggestionIcon;
         this.ellipsize = ellipsize;
+        this.checkWholeString = checkWholeString;
     }
 
     @Override
@@ -54,8 +56,14 @@ public class SearchAdapter extends BaseAdapter implements Filterable {
                     List<String> searchData = new ArrayList<>();
 
                     for (String string : suggestions) {
-                        if (string.toLowerCase().startsWith(constraint.toString().toLowerCase())) {
-                            searchData.add(string);
+                        if(checkWholeString){
+                            if(string.toLowerCase().contains(constraint.toString().toLowerCase())){
+                                searchData.add(string);
+                            }
+                        } else {
+                            if (string.toLowerCase().startsWith(constraint.toString().toLowerCase())) {
+                                searchData.add(string);
+                            }
                         }
                     }
 
@@ -122,9 +130,9 @@ public class SearchAdapter extends BaseAdapter implements Filterable {
         ImageView imageView;
 
         public SuggestionsViewHolder(View convertView) {
-            textView = (TextView) convertView.findViewById(R.id.suggestion_text);
+            textView = convertView.findViewById(R.id.suggestion_text);
             if (suggestionIcon != null) {
-                imageView = (ImageView) convertView.findViewById(R.id.suggestion_icon);
+                imageView = convertView.findViewById(R.id.suggestion_icon);
                 imageView.setImageDrawable(suggestionIcon);
             }
         }
